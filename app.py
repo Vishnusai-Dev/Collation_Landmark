@@ -43,9 +43,8 @@ def read_files(uploaded_files):
             if REQUIRED_COLUMN not in df.columns:
                 status_logs.append((file_name, f"⚠️ Missing '{REQUIRED_COLUMN}' column"))
             else:
-                # Limit rows and columns
-                df = df.loc[:, :COL_LIMIT]
-                df = df.head(ROW_LIMIT)
+                # Limit rows and columns safely
+                df = df.iloc[:ROW_LIMIT, :COL_LIMIT]
 
                 dfs[file_name] = df
                 previews[file_name] = df.head(5)
