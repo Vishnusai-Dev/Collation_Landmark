@@ -16,6 +16,8 @@ uploaded_files = st.file_uploader("Upload files (CSV, XLSX, or XLSB)", type=["cs
 
 # Read data into DataFrames with validation
 REQUIRED_COLUMN = "Product Code"
+ROW_LIMIT = 3000
+COL_LIMIT = 200
 
 def read_files(uploaded_files):
     dfs = {}
@@ -41,9 +43,13 @@ def read_files(uploaded_files):
             if REQUIRED_COLUMN not in df.columns:
                 status_logs.append((file_name, f"⚠️ Missing '{REQUIRED_COLUMN}' column"))
             else:
+                # Limit rows and columns
+                df = df.loc[:, :COL_LIMIT]
+                df = df.head(ROW_LIMIT)
+
                 dfs[file_name] = df
                 previews[file_name] = df.head(5)
-                status_logs.append((file_name, "✅ Loaded successfully"))
+                status_logs.append((file_name, "✅ Loaded successfully (limited to 3000 rows, 200 columns)"))
         except Exception as e:
             tb = traceback.format_exc()
             status_logs.append((file_name, f"❌ Error: {str(e)}\n{tb}"))
