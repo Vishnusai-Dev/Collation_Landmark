@@ -85,15 +85,27 @@ if uploaded_files:
                 st.dataframe(merged_df.head(20))
                 st.write("✅ Merged DataFrame shape:", merged_df.shape)
 
-            buffer = io.BytesIO()
-            merged_df.to_excel(buffer, index=False)
-            buffer.seek(0)  # Important for download
-            st.download_button(
-                label="📥 Download Merged File",
-                data=buffer.getvalue(),
-                file_name="Merged_SKU_Data.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            if len(merged_df) > 50000:
+                st.warning("⚠️ Merged file too large to download directly as Excel. You can split input or use CSV.")
+
+                csv_buffer = io.StringIO()
+                merged_df.to_csv(csv_buffer, index=False)
+                st.download_button(
+                    label="📥 Download as CSV",
+                    data=csv_buffer.getvalue(),
+                    file_name="Merged_SKU_Data.csv",
+                    mime="text/csv"
+                )
+            else:
+                buffer = io.BytesIO()
+                merged_df.to_excel(buffer, engine="openpyxl", index=False)
+                buffer.seek(0)
+                st.download_button(
+                    label="📥 Download as Excel",
+                    data=buffer.getvalue(),
+                    file_name="Merged_SKU_Data.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         except Exception as e:
             st.error(f"❌ Error while merging or generating output: {str(e)}")
             st.exception(e)
