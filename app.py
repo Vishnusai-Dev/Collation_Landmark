@@ -5,38 +5,29 @@ import io
 
 st.set_page_config(page_title="SKU Data Merger", layout="wide")
 st.title("🔗 SKU Data Merger")
-st.write("Upload five files for a single SKU and get a combined Excel output.")
+st.write("Upload any number of files for a single SKU and get a combined Excel output.")
 
-# Upload files
-uploaded_files = {
-    "Attribute Dump": st.file_uploader("Upload Attribute Dump (.xlsx)", type="xlsx"),
-    "Dimensions": st.file_uploader("Upload Dimensions (.csv)", type="csv"),
-    "Image Links": st.file_uploader("Upload Image Links (.csv)", type="csv"),
-    "Myntra/Ajio Upload": st.file_uploader("Upload Myntra and Ajio Upload (.xlsb)", type="xlsb"),
-    "Overview": st.file_uploader("Upload Overview (.csv)", type="csv")
-}
+# Upload multiple files
+uploaded_files = st.file_uploader("Upload files (CSV, XLSX, or XLSB)", type=["csv", "xlsx", "xlsb"], accept_multiple_files=True)
 
 # Read data into DataFrames
-def read_files():
+def read_files(uploaded_files):
     dfs = {}
-    try:
-        if uploaded_files["Attribute Dump"]:
-            dfs["Attribute"] = pd.read_excel(uploaded_files["Attribute Dump"])
-
-        if uploaded_files["Dimensions"]:
-            dfs["Dimensions"] = pd.read_csv(uploaded_files["Dimensions"])
-
-        if uploaded_files["Image Links"]:
-            dfs["Images"] = pd.read_csv(uploaded_files["Image Links"])
-
-        if uploaded_files["Myntra/Ajio Upload"]:
-            dfs["Upload"] = pd.read_excel(uploaded_files["Myntra/Ajio Upload"], engine="pyxlsb")
-
-        if uploaded_files["Overview"]:
-            dfs["Overview"] = pd.read_csv(uploaded_files["Overview"])
-    except Exception as e:
-        st.error(f"Error reading files: {e}")
-        return None
+    for uploaded_file in uploaded_files:
+        file_name = uploaded_file.name
+        try:
+            if file_name.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file)
+            elif file_name.endswith(".xlsb"):
+                df = pd.read_excel(uploaded_file, engine="pyxlsb")
+            elif file_name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                st.warning(f"Unsupported file type: {file_name}")
+                continue
+            dfs[file_name] = df
+        except Exception as e:
+            st.error(f"Error reading {file_name}: {e}")
     return dfs
 
 # Merge DataFrames
@@ -44,7 +35,7 @@ def merge_dataframes(dfs):
     result = None
     for name, df in dfs.items():
         if "Product Code" not in df.columns:
-            st.warning(f"'{name}' file does not contain 'Product Code' column and will be skipped.")
+            st.warning(f"'{name}' does not contain 'Product Code' column and will be skipped.")
             continue
 
         df_renamed = df.copy()
@@ -58,8 +49,8 @@ def merge_dataframes(dfs):
     return result
 
 # Process and display output
-if all(uploaded_files.values()):
-    dfs = read_files()
+if uploaded_files:
+    dfs = read_files(uploaded_files)
     if dfs:
         merged_df = merge_dataframes(dfs)
         st.success("✅ Files merged successfully!")
@@ -76,4 +67,4 @@ if all(uploaded_files.values()):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("⬆️ Please upload all five files to begin.")
+    st.info("⬆️ Please upload one or more files to begin.")
