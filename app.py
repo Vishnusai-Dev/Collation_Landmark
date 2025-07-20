@@ -1,9 +1,10 @@
 import os
-os.environ["STREAMLIT_FILE_WATCHER_TYPE"] = "none"
-
 import streamlit as st
 import pandas as pd
 import io
+
+# Disable file watcher explicitly for safety
+os.environ["STREAMLIT_FILE_WATCHER_TYPE"] = "none"
 
 st.set_page_config(page_title="SKU Data Merger", layout="wide")
 st.title("🔗 SKU Data Merger")
@@ -12,9 +13,13 @@ st.write("Upload any number of files for a single SKU and get a combined Excel o
 # Upload multiple files
 uploaded_files = st.file_uploader("Upload files (CSV, XLSX, or XLSB)", type=["csv", "xlsx", "xlsb"], accept_multiple_files=True)
 
-# Read data into DataFrames
+# Read data into DataFrames with validation
+REQUIRED_COLUMN = "Product Code"
+
 def read_files(uploaded_files):
     dfs = {}
+    status_logs = []
+    previews = {}
     for uploaded_file in uploaded_files:
         file_name = uploaded_file.name
         try:
@@ -25,34 +30,46 @@ def read_files(uploaded_files):
             elif file_name.endswith(".csv"):
                 df = pd.read_csv(uploaded_file)
             else:
-                st.warning(f"Unsupported file type: {file_name}")
+                status_logs.append((file_name, "❌ Unsupported file type"))
                 continue
-            dfs[file_name] = df
+
+            if REQUIRED_COLUMN not in df.columns:
+                status_logs.append((file_name, f"⚠️ Missing '{REQUIRED_COLUMN}' column"))
+            else:
+                dfs[file_name] = df
+                previews[file_name] = df.head(5)
+                status_logs.append((file_name, "✅ Loaded successfully"))
         except Exception as e:
-            st.error(f"Error reading {file_name}: {e}")
-    return dfs
+            status_logs.append((file_name, f"❌ Error: {str(e)}"))
+    return dfs, status_logs, previews
 
 # Merge DataFrames
 def merge_dataframes(dfs):
     result = None
     for name, df in dfs.items():
-        if "Product Code" not in df.columns:
-            st.warning(f"'{name}' does not contain 'Product Code' column and will be skipped.")
-            continue
-
         df_renamed = df.copy()
-        df_renamed.columns = [f"{name}_{col}" if col != "Product Code" else col for col in df.columns]
+        df_renamed.columns = [f"{name}_{col}" if col != REQUIRED_COLUMN else col for col in df.columns]
 
         if result is None:
             result = df_renamed
         else:
-            result = pd.merge(result, df_renamed, on="Product Code", how="outer")
+            result = pd.merge(result, df_renamed, on=REQUIRED_COLUMN, how="outer")
 
     return result
 
 # Process and display output
 if uploaded_files:
-    dfs = read_files(uploaded_files)
+    dfs, logs, previews = read_files(uploaded_files)
+
+    with st.expander("📋 File Upload Status"):
+        for filename, status in logs:
+            st.write(f"- `{filename}` → {status}")
+
+    if previews:
+        with st.expander("👀 Preview Uploaded Files"):
+            selected_preview = st.selectbox("Select a file to preview:", list(previews.keys()))
+            st.dataframe(previews[selected_preview])
+
     if dfs:
         merged_df = merge_dataframes(dfs)
         st.success("✅ Files merged successfully!")
@@ -68,5 +85,7 @@ if uploaded_files:
             file_name="Merged_SKU_Data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+    else:
+        st.warning("⚠️ No valid files with 'Product Code' column found.")
 else:
     st.info("⬆️ Please upload one or more files to begin.")
