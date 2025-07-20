@@ -83,9 +83,11 @@ if uploaded_files:
 
             with st.expander("🔍 Preview Merged Data"):
                 st.dataframe(merged_df.head(20))
+                st.write("✅ Merged DataFrame shape:", merged_df.shape)
 
             buffer = io.BytesIO()
             merged_df.to_excel(buffer, index=False)
+            buffer.seek(0)  # Important for download
             st.download_button(
                 label="📥 Download Merged File",
                 data=buffer.getvalue(),
