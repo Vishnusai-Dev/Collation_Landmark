@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import pandas as pd
 import io
+import traceback
 
 # Disable file watcher explicitly for safety
 os.environ["STREAMLIT_FILE_WATCHER_TYPE"] = "none"
@@ -26,7 +27,11 @@ def read_files(uploaded_files):
             if file_name.endswith(".xlsx"):
                 df = pd.read_excel(uploaded_file)
             elif file_name.endswith(".xlsb"):
-                df = pd.read_excel(uploaded_file, engine="pyxlsb")
+                try:
+                    df = pd.read_excel(uploaded_file, engine="pyxlsb")
+                except Exception as e:
+                    status_logs.append((file_name, f"❌ pyxlsb error: {str(e)}"))
+                    continue
             elif file_name.endswith(".csv"):
                 df = pd.read_csv(uploaded_file)
             else:
@@ -40,7 +45,8 @@ def read_files(uploaded_files):
                 previews[file_name] = df.head(5)
                 status_logs.append((file_name, "✅ Loaded successfully"))
         except Exception as e:
-            status_logs.append((file_name, f"❌ Error: {str(e)}"))
+            tb = traceback.format_exc()
+            status_logs.append((file_name, f"❌ Error: {str(e)}\n{tb}"))
     return dfs, status_logs, previews
 
 # Merge DataFrames
@@ -71,20 +77,24 @@ if uploaded_files:
             st.dataframe(previews[selected_preview])
 
     if dfs:
-        merged_df = merge_dataframes(dfs)
-        st.success("✅ Files merged successfully!")
+        try:
+            merged_df = merge_dataframes(dfs)
+            st.success("✅ Files merged successfully!")
 
-        with st.expander("🔍 Preview Merged Data"):
-            st.dataframe(merged_df.head(20))
+            with st.expander("🔍 Preview Merged Data"):
+                st.dataframe(merged_df.head(20))
 
-        buffer = io.BytesIO()
-        merged_df.to_excel(buffer, index=False)
-        st.download_button(
-            label="📥 Download Merged File",
-            data=buffer.getvalue(),
-            file_name="Merged_SKU_Data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            buffer = io.BytesIO()
+            merged_df.to_excel(buffer, index=False)
+            st.download_button(
+                label="📥 Download Merged File",
+                data=buffer.getvalue(),
+                file_name="Merged_SKU_Data.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        except Exception as e:
+            st.error(f"❌ Error while merging or generating output: {str(e)}")
+            st.exception(e)
     else:
         st.warning("⚠️ No valid files with 'Product Code' column found.")
 else:
