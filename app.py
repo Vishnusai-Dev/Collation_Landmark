@@ -11,19 +11,25 @@ st.set_page_config(page_title="SKU Data Merger", layout="wide")
 st.title("🔗 SKU Data Merger")
 st.write("Upload any number of files for a single SKU and get a combined Excel output.")
 
+# User-defined limits
+st.sidebar.header("⚙️ Data Limits")
+ROW_LIMIT = st.sidebar.number_input("Max rows per file", min_value=100, max_value=10000, value=3000)
+COL_LIMIT = st.sidebar.number_input("Max columns per file", min_value=10, max_value=1000, value=200)
+
 # Upload multiple files
 uploaded_files = st.file_uploader("Upload files (CSV, XLSX, or XLSB)", type=["csv", "xlsx", "xlsb"], accept_multiple_files=True)
 
 # Read data into DataFrames with validation
 REQUIRED_COLUMN = "Product Code"
-ROW_LIMIT = 3000
-COL_LIMIT = 200
 
 def read_files(uploaded_files):
     dfs = {}
     status_logs = []
     previews = {}
-    for uploaded_file in uploaded_files:
+    exclude_flags = {}
+    progress_bar = st.progress(0, text="Reading files...")
+
+    for i, uploaded_file in enumerate(uploaded_files):
         file_name = uploaded_file.name
         try:
             if file_name.endswith(".xlsx"):
@@ -43,34 +49,41 @@ def read_files(uploaded_files):
             if REQUIRED_COLUMN not in df.columns:
                 status_logs.append((file_name, f"⚠️ Missing '{REQUIRED_COLUMN}' column"))
             else:
-                # Limit rows and columns safely
-                df = df.iloc[:ROW_LIMIT, :COL_LIMIT]
-
+                df = df.iloc[:ROW_LIMIT, :COL_LIMIT]  # apply row and column limits
                 dfs[file_name] = df
                 previews[file_name] = df.head(5)
-                status_logs.append((file_name, "✅ Loaded successfully (limited to 3000 rows, 200 columns)"))
+                exclude_flags[file_name] = False
+                status_logs.append((file_name, f"✅ Loaded ({df.shape[0]} rows, {df.shape[1]} columns)"))
         except Exception as e:
             tb = traceback.format_exc()
             status_logs.append((file_name, f"❌ Error: {str(e)}\n{tb}"))
-    return dfs, status_logs, previews
+
+        progress_bar.progress((i + 1) / len(uploaded_files), text=f"Processed {i + 1}/{len(uploaded_files)} files")
+
+    progress_bar.empty()
+    return dfs, status_logs, previews, exclude_flags
 
 # Merge DataFrames
-def merge_dataframes(dfs):
+def merge_dataframes(dfs, exclude_flags):
     result = None
     for name, df in dfs.items():
+        if exclude_flags.get(name):
+            continue
+
         df_renamed = df.copy()
-        df_renamed.columns = [f"{name}_{col}" if col != REQUIRED_COLUMN else col for col in df.columns]
+        # Add file name as first row, not in column names
+        file_label_row = pd.DataFrame([[name if col != REQUIRED_COLUMN else "" for col in df.columns]], columns=df.columns)
+        df_renamed = pd.concat([file_label_row, df_renamed], ignore_index=True)
 
         if result is None:
             result = df_renamed
         else:
             result = pd.merge(result, df_renamed, on=REQUIRED_COLUMN, how="outer")
-
     return result
 
 # Process and display output
 if uploaded_files:
-    dfs, logs, previews = read_files(uploaded_files)
+    dfs, logs, previews, exclude_flags = read_files(uploaded_files)
 
     with st.expander("📋 File Upload Status"):
         for filename, status in logs:
@@ -81,9 +94,17 @@ if uploaded_files:
             selected_preview = st.selectbox("Select a file to preview:", list(previews.keys()))
             st.dataframe(previews[selected_preview])
 
+    with st.expander("🚫 Exclude Files from Merge"):
+        for file in list(dfs.keys()):
+            exclude_flags[file] = st.checkbox(f"Exclude `{file}`", value=False)
+
     if dfs:
         try:
-            merged_df = merge_dataframes(dfs)
+            merge_progress = st.progress(0, text="Merging data...")
+            merged_df = merge_dataframes(dfs, exclude_flags)
+            merge_progress.progress(1.0, text="Merge complete!")
+            merge_progress.empty()
+
             st.success("✅ Files merged successfully!")
 
             with st.expander("🔍 Preview Merged Data"):
@@ -92,7 +113,6 @@ if uploaded_files:
 
             if len(merged_df) > 50000:
                 st.warning("⚠️ Merged file too large to download directly as Excel. You can split input or use CSV.")
-
                 csv_buffer = io.StringIO()
                 merged_df.to_csv(csv_buffer, index=False)
                 st.download_button(
